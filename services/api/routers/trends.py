@@ -111,6 +111,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
                 COUNT(*) FILTER (WHERE source = 'stocktwits') as stocktwits,
                 COUNT(*) FILTER (WHERE source = 'reddit') as reddit,
                 COUNT(*) FILTER (WHERE source = 'nitter') as nitter,
+                COUNT(*) FILTER (WHERE source = 'news') as news,
                 MAX(collected_at) as last_collected
             FROM posts
         """)
@@ -124,6 +125,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
             "stocktwits": row.stocktwits,
             "reddit": row.reddit,
             "nitter": row.nitter,
+            "news": row.news,
         },
         "tickers_tracked": ticker_row[0],
         "last_collected": row.last_collected.isoformat() if row.last_collected else None,

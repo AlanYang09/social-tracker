@@ -25,6 +25,10 @@ app.conf.beat_schedule = {
         "task": "tasks.snapshot.snapshot_trends",
         "schedule": 900.0,
     },
+    "scrape-news-every-30min": {
+        "task": "tasks.scrape_keywords.scrape_news",
+        "schedule": 1800.0,
+    },
 }
 
 app.autodiscover_tasks(["tasks"])

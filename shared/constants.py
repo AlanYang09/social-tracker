@@ -16,6 +16,7 @@ SOURCE_STOCKTWITS = "stocktwits"
 SOURCE_REDDIT = "reddit"
 SOURCE_TWITTER = "twitter"
 SOURCE_NITTER = "nitter"
+SOURCE_NEWS = "news"
 
 # Default keywords to track
 DEFAULT_KEYWORDS = [

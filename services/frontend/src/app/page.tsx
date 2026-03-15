@@ -14,7 +14,7 @@ import {
 const API = process.env.NEXT_PUBLIC_API_URL || "";
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-const SOURCES = ["all", "stocktwits", "reddit", "nitter"] as const;
+const SOURCES = ["all", "stocktwits", "reddit", "nitter", "news"] as const;
 type Source = (typeof SOURCES)[number];
 type ChartMode = "sentiment" | "velocity";
 
@@ -39,6 +39,7 @@ function SourceBadge({ source }: { source: string }) {
     stocktwits: "bg-purple-900 text-purple-300",
     reddit: "bg-orange-900 text-orange-300",
     nitter: "bg-sky-900 text-sky-300",
+    news: "bg-emerald-900 text-emerald-300",
   };
   return (
     <span className={`text-xs px-1.5 py-0.5 rounded capitalize font-medium ${colors[source] ?? "bg-gray-700 text-gray-400"}`}>

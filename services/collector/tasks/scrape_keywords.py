@@ -9,6 +9,7 @@ from config import KEYWORDS, SUBREDDITS
 from scrapers.stocktwits_client import StockTwitsScraper
 from scrapers.reddit_client import RedditScraper
 from scrapers.nitter_rss import NitterRSSScraper
+from scrapers.newsapi_client import NewsAPIScraper
 from shared.constants import CHANNEL_LIVE_FEED
 
 logger = logging.getLogger(__name__)
@@ -108,3 +109,15 @@ def scrape_nitter(self):
         return {"fetched": len(posts), "saved": saved}
     except Exception as exc:
         raise self.retry(exc=exc, countdown=120)
+
+
+@app.task(name="tasks.scrape_keywords.scrape_news", bind=True, max_retries=3)
+def scrape_news(self):
+    try:
+        scraper = NewsAPIScraper()
+        posts = scraper.scrape(KEYWORDS)
+        saved = save_posts(posts)
+        logger.info(f"NewsAPI: fetched {len(posts)}, saved {saved} new posts")
+        return {"fetched": len(posts), "saved": saved}
+    except Exception as exc:
+        raise self.retry(exc=exc, countdown=300)
