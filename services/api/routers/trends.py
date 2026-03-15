@@ -68,6 +68,39 @@ async def get_sentiment_timeline(
     ]
 
 
+@router.get("/history")
+async def get_trend_history(
+    ticker: str = Query(...),
+    hours: int = Query(24),
+    db: AsyncSession = Depends(get_db),
+):
+    """Trending snapshot history for a ticker — shows how mention velocity changed."""
+    result = await db.execute(
+        text("""
+            SELECT
+                snapshot_at,
+                mention_count,
+                avg_sentiment,
+                velocity
+            FROM trending_snapshots
+            WHERE topic = :ticker
+              AND snapshot_at >= NOW() - (:hours * INTERVAL '1 hour')
+            ORDER BY snapshot_at ASC
+        """),
+        {"ticker": ticker.upper(), "hours": hours},
+    )
+    rows = result.fetchall()
+    return [
+        {
+            "snapshot_at": row.snapshot_at.isoformat(),
+            "mention_count": row.mention_count,
+            "avg_sentiment": round(float(row.avg_sentiment or 0), 4),
+            "velocity": round(float(row.velocity or 0), 2),
+        }
+        for row in rows
+    ]
+
+
 @router.get("/stats")
 async def get_stats(db: AsyncSession = Depends(get_db)):
     """Quick system overview: total posts, per-source counts, last collected."""

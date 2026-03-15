@@ -16,6 +16,7 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 const SOURCES = ["all", "stocktwits", "reddit", "nitter"] as const;
 type Source = (typeof SOURCES)[number];
+type ChartMode = "sentiment" | "velocity";
 
 function SentimentBadge({ score, label }: { score: number | null; label: string | null }) {
   if (score === null) return null;
@@ -59,6 +60,7 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [source, setSource] = useState<Source>("all");
   const [selectedTicker, setSelectedTicker] = useState("TSLA");
+  const [chartMode, setChartMode] = useState<ChartMode>("sentiment");
   const [livePosts, setLivePosts] = useState<any[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -79,6 +81,12 @@ export default function Dashboard() {
 
   const { data: sentiment } = useSWR(
     `${API}/api/trends/sentiment?ticker=${selectedTicker}&hours=24`,
+    fetcher,
+    { refreshInterval: 60000 }
+  );
+
+  const { data: history } = useSWR(
+    `${API}/api/trends/history?ticker=${selectedTicker}&hours=24`,
     fetcher,
     { refreshInterval: 60000 }
   );
@@ -207,49 +215,71 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Sentiment Chart */}
+        {/* Chart */}
         <div className="bg-gray-900 rounded-xl p-4 border border-gray-800 col-span-2">
-          <h2 className="text-lg font-semibold mb-3 text-gray-200">
-            Sentiment — <span className="text-blue-400 font-mono">${selectedTicker}</span>
-            <span className="text-xs text-gray-500 font-normal ml-2">24h hourly</span>
-          </h2>
-          {sentiment?.length ? (
-            <ResponsiveContainer width="100%" height={230}>
-              <LineChart data={sentiment} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-                <XAxis
-                  dataKey="hour"
-                  tickFormatter={(v) => v.slice(11, 16)}
-                  stroke="#374151"
-                  tick={{ fontSize: 11, fill: "#6b7280" }}
-                />
-                <YAxis
-                  domain={[-1, 1]}
-                  stroke="#374151"
-                  tick={{ fontSize: 11, fill: "#6b7280" }}
-                  tickFormatter={(v) => v.toFixed(1)}
-                />
-                <ReferenceLine y={0} stroke="#374151" strokeDasharray="3 3" />
-                <Tooltip
-                  contentStyle={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 8 }}
-                  labelStyle={{ color: "#9ca3af", fontSize: 12 }}
-                  formatter={(v: any) => [v.toFixed(3), "sentiment"]}
-                  labelFormatter={(l) => l.slice(0, 16)}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="avg_sentiment"
-                  stroke="#3b82f6"
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-56 flex flex-col items-center justify-center text-gray-500 text-sm">
-              <div className="text-3xl mb-2">📈</div>
-              No sentiment data for <span className="font-mono text-gray-400">${selectedTicker}</span> yet
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold text-gray-200">
+              <span className="text-blue-400 font-mono">${selectedTicker}</span>
+              <span className="text-xs text-gray-500 font-normal ml-2">24h</span>
+            </h2>
+            <div className="flex gap-1 bg-gray-800 rounded-lg p-1">
+              {(["sentiment", "velocity"] as ChartMode[]).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setChartMode(m)}
+                  className={`px-3 py-1 rounded-md text-xs capitalize transition-colors ${
+                    chartMode === m ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
             </div>
+          </div>
+
+          {chartMode === "sentiment" ? (
+            sentiment?.length ? (
+              <ResponsiveContainer width="100%" height={230}>
+                <LineChart data={sentiment} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                  <XAxis dataKey="hour" tickFormatter={(v) => v.slice(11, 16)} stroke="#374151" tick={{ fontSize: 11, fill: "#6b7280" }} />
+                  <YAxis domain={[-1, 1]} stroke="#374151" tick={{ fontSize: 11, fill: "#6b7280" }} tickFormatter={(v) => v.toFixed(1)} />
+                  <ReferenceLine y={0} stroke="#374151" strokeDasharray="3 3" />
+                  <Tooltip
+                    contentStyle={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 8 }}
+                    labelStyle={{ color: "#9ca3af", fontSize: 12 }}
+                    formatter={(v: any) => [v.toFixed(3), "sentiment"]}
+                    labelFormatter={(l) => l.slice(0, 16)}
+                  />
+                  <Line type="monotone" dataKey="avg_sentiment" stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-56 flex flex-col items-center justify-center text-gray-500 text-sm">
+                <div className="text-3xl mb-2">📈</div>
+                No sentiment data for <span className="font-mono text-gray-400">${selectedTicker}</span> yet
+              </div>
+            )
+          ) : (
+            history?.length ? (
+              <ResponsiveContainer width="100%" height={230}>
+                <LineChart data={history} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                  <XAxis dataKey="snapshot_at" tickFormatter={(v) => v.slice(11, 16)} stroke="#374151" tick={{ fontSize: 11, fill: "#6b7280" }} />
+                  <YAxis stroke="#374151" tick={{ fontSize: 11, fill: "#6b7280" }} />
+                  <Tooltip
+                    contentStyle={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 8 }}
+                    labelStyle={{ color: "#9ca3af", fontSize: 12 }}
+                    formatter={(v: any) => [v, "mentions/hr"]}
+                    labelFormatter={(l) => l.slice(0, 16)}
+                  />
+                  <Line type="monotone" dataKey="mention_count" stroke="#a78bfa" strokeWidth={2} dot={false} activeDot={{ r: 4 }} name="mentions" />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-56 flex flex-col items-center justify-center text-gray-500 text-sm">
+                <div className="text-3xl mb-2">📊</div>
+                No velocity snapshots yet — first snapshot runs at 15min mark
+              </div>
+            )
           )}
         </div>
 

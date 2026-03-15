@@ -44,4 +44,5 @@ CREATE TABLE IF NOT EXISTS trending_snapshots (
 CREATE INDEX IF NOT EXISTS idx_posts_posted_at ON posts(posted_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_source ON posts(source);
 CREATE INDEX IF NOT EXISTS idx_ticker_mentions_ticker ON ticker_mentions(ticker, mentioned_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ticker_mentions_unique ON ticker_mentions(post_id, ticker);
 CREATE INDEX IF NOT EXISTS idx_trending_snapshots_at ON trending_snapshots(snapshot_at DESC);
