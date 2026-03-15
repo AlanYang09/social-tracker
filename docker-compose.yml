@@ -31,7 +31,9 @@ services:
       retries: 5
 
   collector:
-    build: ./services/collector
+    build:
+      context: .
+      dockerfile: services/collector/Dockerfile
     restart: always
     depends_on:
       postgres:
@@ -42,7 +44,9 @@ services:
     command: celery -A main worker --beat --loglevel=info --concurrency=2
 
   analyzer:
-    build: ./services/analyzer
+    build:
+      context: .
+      dockerfile: services/analyzer/Dockerfile
     restart: always
     depends_on:
       postgres:
@@ -53,7 +57,9 @@ services:
     command: celery -A main worker --loglevel=info --concurrency=2 -Q analysis
 
   api:
-    build: ./services/api
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
     restart: always
     depends_on:
       postgres:
@@ -66,7 +72,9 @@ services:
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
   notifier:
-    build: ./services/notifier
+    build:
+      context: .
+      dockerfile: services/notifier/Dockerfile
     restart: always
     depends_on:
       redis:
@@ -75,14 +83,15 @@ services:
     command: python main.py
 
   frontend:
-    build: ./services/frontend
+    build:
+      context: ./services/frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     restart: always
     depends_on:
       - api
     ports:
       - "3000:3000"
-    environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
 
   nginx:
     image: nginx:alpine

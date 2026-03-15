@@ -24,7 +24,9 @@ async def alert_loop(bot: Bot):
 
 async def main():
     if not BOT_TOKEN:
-        logger.error("TELEGRAM_BOT_TOKEN not set — notifier will not start")
+        logger.warning("TELEGRAM_BOT_TOKEN not set — notifier idle (set it in .env to enable)")
+        while True:
+            await asyncio.sleep(3600)
         return
 
     app = Application.builder().token(BOT_TOKEN).build()

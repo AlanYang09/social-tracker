@@ -21,6 +21,9 @@ class RedditScraper(BaseScraper):
         )
 
     def scrape(self, keywords: List[str], subreddits: List[str] = None) -> List[PostIn]:
+        if not os.getenv("REDDIT_CLIENT_ID"):
+            logger.info("Reddit credentials not set — skipping Reddit scrape")
+            return []
         from config import SUBREDDITS
         subreddits = subreddits or SUBREDDITS
         posts = []

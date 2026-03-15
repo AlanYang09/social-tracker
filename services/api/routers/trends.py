@@ -19,7 +19,7 @@ async def get_trending_stocks(
                 COUNT(*) as mention_count,
                 AVG(sentiment_score) as avg_sentiment
             FROM ticker_mentions
-            WHERE mentioned_at >= NOW() - INTERVAL ':hours hours'
+            WHERE mentioned_at >= NOW() - (:hours * INTERVAL '1 hour')
             GROUP BY ticker
             ORDER BY mention_count DESC
             LIMIT :limit
@@ -51,7 +51,7 @@ async def get_sentiment_timeline(
                 COUNT(*) as mentions
             FROM ticker_mentions
             WHERE ticker = :ticker
-              AND mentioned_at >= NOW() - INTERVAL ':hours hours'
+              AND mentioned_at >= NOW() - (:hours * INTERVAL '1 hour')
             GROUP BY hour
             ORDER BY hour ASC
         """),
