@@ -1,0 +1,10 @@
+celery[redis]==5.3.6
+praw==7.7.1
+requests==2.31.0
+feedparser==6.0.11
+psycopg2-binary==2.9.9
+sqlalchemy==2.0.27
+asyncpg==0.29.0
+pydantic==2.6.1
+python-dotenv==1.0.1
+twscrape==0.12.3
