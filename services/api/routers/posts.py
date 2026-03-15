@@ -1,10 +1,8 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
+from sqlalchemy import text
 from typing import Optional
-from datetime import datetime
 from db.database import get_db
-from models.post import Post
 
 router = APIRouter(prefix="/api/posts", tags=["posts"])
 
@@ -17,22 +15,48 @@ async def get_posts(
     offset: int = Query(0),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(Post).order_by(Post.posted_at.desc()).limit(limit).offset(offset)
+    filters = ["1=1"]
+    params: dict = {"limit": limit, "offset": offset}
     if q:
-        stmt = stmt.where(Post.content.ilike(f"%{q}%"))
+        filters.append("p.content ILIKE :q")
+        params["q"] = f"%{q}%"
     if source:
-        stmt = stmt.where(Post.source == source)
-    result = await db.execute(stmt)
-    posts = result.scalars().all()
+        filters.append("p.source = :source")
+        params["source"] = source
+
+    where = " AND ".join(filters)
+    result = await db.execute(
+        text(f"""
+            SELECT
+                p.id::text,
+                p.external_id,
+                p.source,
+                p.author,
+                p.content,
+                p.url,
+                p.posted_at,
+                s.score  AS sentiment_score,
+                s.label  AS sentiment_label
+            FROM posts p
+            LEFT JOIN sentiment_scores s ON s.post_id = p.id AND s.analyzer = 'vader'
+            WHERE {where}
+            ORDER BY p.posted_at DESC
+            LIMIT :limit OFFSET :offset
+        """),
+        params,
+    )
+    rows = result.fetchall()
     return [
         {
-            "id": str(p.id),
-            "external_id": p.external_id,
-            "source": p.source,
-            "author": p.author,
-            "content": p.content,
-            "url": p.url,
-            "posted_at": p.posted_at.isoformat() if p.posted_at else None,
+            "id": row.id,
+            "external_id": row.external_id,
+            "source": row.source,
+            "author": row.author,
+            "content": row.content,
+            "url": row.url,
+            "posted_at": row.posted_at.isoformat() if row.posted_at else None,
+            "sentiment_score": float(row.sentiment_score) if row.sentiment_score is not None else None,
+            "sentiment_label": row.sentiment_label,
         }
-        for p in posts
+        for row in rows
     ]

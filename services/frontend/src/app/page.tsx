@@ -1,20 +1,72 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import useSWR from "swr";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ReferenceLine,
+  ResponsiveContainer,
+} from "recharts";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API = process.env.NEXT_PUBLIC_API_URL || "";
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+const SOURCES = ["all", "stocktwits", "reddit", "nitter"] as const;
+type Source = (typeof SOURCES)[number];
+
+function SentimentBadge({ score, label }: { score: number | null; label: string | null }) {
+  if (score === null) return null;
+  const cls =
+    score > 0.05
+      ? "bg-green-900 text-green-300 border-green-700"
+      : score < -0.05
+      ? "bg-red-900 text-red-300 border-red-700"
+      : "bg-gray-700 text-gray-400 border-gray-600";
+  const icon = score > 0.05 ? "▲" : score < -0.05 ? "▼" : "—";
+  return (
+    <span className={`text-xs px-1.5 py-0.5 rounded border font-mono ${cls}`}>
+      {icon} {score > 0 ? "+" : ""}{score.toFixed(2)}
+    </span>
+  );
+}
+
+function SourceBadge({ source }: { source: string }) {
+  const colors: Record<string, string> = {
+    stocktwits: "bg-purple-900 text-purple-300",
+    reddit: "bg-orange-900 text-orange-300",
+    nitter: "bg-sky-900 text-sky-300",
+  };
+  return (
+    <span className={`text-xs px-1.5 py-0.5 rounded capitalize font-medium ${colors[source] ?? "bg-gray-700 text-gray-400"}`}>
+      {source}
+    </span>
+  );
+}
+
+function timeAgo(iso: string) {
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return new Date(iso).toLocaleDateString();
+}
 
 export default function Dashboard() {
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
+  const [source, setSource] = useState<Source>("all");
   const [selectedTicker, setSelectedTicker] = useState("TSLA");
   const [livePosts, setLivePosts] = useState<any[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
 
+  const sourceParam = source !== "all" ? `&source=${source}` : "";
+  const searchParam = search ? `&q=${encodeURIComponent(search)}` : "";
+
   const { data: posts } = useSWR(
-    `${API}/api/posts?q=${search}&limit=50`,
+    `${API}/api/posts?limit=50${searchParam}${sourceParam}`,
     fetcher,
     { refreshInterval: 30000 }
   );
@@ -31,128 +83,248 @@ export default function Dashboard() {
     { refreshInterval: 60000 }
   );
 
+  const { data: stats } = useSWR(
+    `${API}/api/trends/stats`,
+    fetcher,
+    { refreshInterval: 60000 }
+  );
+
   useEffect(() => {
-    const wsUrl = API.replace("http", "ws") + "/ws/live-feed";
-    wsRef.current = new WebSocket(wsUrl);
-    wsRef.current.onmessage = (e) => {
-      try {
-        const post = JSON.parse(e.data);
-        setLivePosts((prev) => [post, ...prev].slice(0, 50));
-      } catch {}
+    const base = API || `${window.location.protocol}//${window.location.host}`;
+    const wsUrl = base.replace(/^https/, "wss").replace(/^http/, "ws") + "/ws/live-feed";
+    const connect = () => {
+      wsRef.current = new WebSocket(wsUrl);
+      wsRef.current.onmessage = (e) => {
+        try {
+          const post = JSON.parse(e.data);
+          setLivePosts((prev) => [post, ...prev].slice(0, 100));
+        } catch {}
+      };
+      wsRef.current.onclose = () => setTimeout(connect, 3000);
     };
+    connect();
     return () => wsRef.current?.close();
   }, []);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <h1 className="text-3xl font-bold mb-6 text-white">Social Tracker</h1>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-3xl font-bold text-white">Social Tracker</h1>
+          <p className="text-gray-500 text-sm mt-0.5">
+            Real-time sentiment across X, Reddit &amp; StockTwits
+          </p>
+        </div>
+        {stats && (
+          <div className="flex gap-4 text-right">
+            <div>
+              <div className="text-2xl font-bold text-white">{stats.total_posts?.toLocaleString()}</div>
+              <div className="text-xs text-gray-500">posts collected</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-blue-400">{stats.tickers_tracked}</div>
+              <div className="text-xs text-gray-500">tickers tracked</div>
+            </div>
+          </div>
+        )}
+      </div>
 
-      {/* Search */}
-      <div className="flex gap-2 mb-8">
-        <input
-          className="flex-1 bg-gray-800 border border-gray-700 rounded px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
-          placeholder="Search posts..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && setSearch(query)}
-        />
-        <button
-          className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded text-white font-medium"
-          onClick={() => setSearch(query)}
-        >
-          Search
-        </button>
+      {/* Search + source filter */}
+      <div className="flex flex-col sm:flex-row gap-2 mb-6">
+        <div className="flex gap-1 bg-gray-900 border border-gray-700 rounded-lg p-1">
+          {SOURCES.map((s) => (
+            <button
+              key={s}
+              onClick={() => setSource(s)}
+              className={`px-3 py-1.5 rounded-md text-sm capitalize transition-colors ${
+                source === s ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              {s}
+              {s !== "all" && stats?.by_source?.[s] != null && (
+                <span className="ml-1 text-xs opacity-70">
+                  {stats.by_source[s].toLocaleString()}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-1 gap-2">
+          <input
+            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+            placeholder="Search posts..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && setSearch(query)}
+          />
+          <button
+            className="bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-lg text-white font-medium transition-colors"
+            onClick={() => setSearch(query)}
+          >
+            Search
+          </button>
+          {search && (
+            <button
+              className="text-gray-400 hover:text-white px-3 py-2 text-sm"
+              onClick={() => { setSearch(""); setQuery(""); }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* Trending Stocks */}
         <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
-          <h2 className="text-lg font-semibold mb-3 text-gray-200">Trending Stocks (24h)</h2>
-          <div className="space-y-2">
+          <h2 className="text-lg font-semibold mb-3 text-gray-200">Trending Stocks <span className="text-xs text-gray-500 font-normal">24h</span></h2>
+          <div className="space-y-1.5">
             {(trending || []).map((t: any) => (
               <button
                 key={t.ticker}
-                className={`w-full flex justify-between items-center px-3 py-2 rounded-lg text-sm transition-colors ${selectedTicker === t.ticker ? "bg-blue-900 border border-blue-700" : "bg-gray-800 hover:bg-gray-700"}`}
+                className={`w-full flex justify-between items-center px-3 py-2 rounded-lg text-sm transition-colors ${
+                  selectedTicker === t.ticker
+                    ? "bg-blue-900 border border-blue-700"
+                    : "bg-gray-800 hover:bg-gray-750 border border-transparent"
+                }`}
                 onClick={() => setSelectedTicker(t.ticker)}
               >
                 <span className="font-mono font-bold text-white">${t.ticker}</span>
-                <div className="flex items-center gap-3">
-                  <span className="text-gray-400">{t.mention_count} mentions</span>
-                  <span className={t.avg_sentiment > 0.05 ? "text-green-400" : t.avg_sentiment < -0.05 ? "text-red-400" : "text-gray-400"}>
-                    {t.avg_sentiment > 0 ? "+" : ""}{t.avg_sentiment?.toFixed(2)}
-                  </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-500 text-xs">{t.mention_count}×</span>
+                  <SentimentBadge score={t.avg_sentiment} label={null} />
                 </div>
               </button>
             ))}
-            {!trending?.length && <p className="text-gray-500 text-sm text-center py-4">No data yet — scrapers starting up</p>}
+            {!trending?.length && (
+              <div className="text-gray-500 text-sm text-center py-6">
+                <div className="text-2xl mb-2">📊</div>
+                Scrapers starting up — data coming soon
+              </div>
+            )}
           </div>
         </div>
 
         {/* Sentiment Chart */}
         <div className="bg-gray-900 rounded-xl p-4 border border-gray-800 col-span-2">
           <h2 className="text-lg font-semibold mb-3 text-gray-200">
-            Sentiment Timeline — <span className="text-blue-400">${selectedTicker}</span>
+            Sentiment — <span className="text-blue-400 font-mono">${selectedTicker}</span>
+            <span className="text-xs text-gray-500 font-normal ml-2">24h hourly</span>
           </h2>
           {sentiment?.length ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={sentiment}>
-                <XAxis dataKey="hour" tickFormatter={(v) => v.slice(11, 16)} stroke="#6b7280" tick={{ fontSize: 11 }} />
-                <YAxis domain={[-1, 1]} stroke="#6b7280" tick={{ fontSize: 11 }} />
-                <Tooltip
-                  contentStyle={{ background: "#1f2937", border: "1px solid #374151", borderRadius: 8 }}
-                  labelStyle={{ color: "#9ca3af" }}
+            <ResponsiveContainer width="100%" height={230}>
+              <LineChart data={sentiment} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                <XAxis
+                  dataKey="hour"
+                  tickFormatter={(v) => v.slice(11, 16)}
+                  stroke="#374151"
+                  tick={{ fontSize: 11, fill: "#6b7280" }}
                 />
-                <Line type="monotone" dataKey="avg_sentiment" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                <YAxis
+                  domain={[-1, 1]}
+                  stroke="#374151"
+                  tick={{ fontSize: 11, fill: "#6b7280" }}
+                  tickFormatter={(v) => v.toFixed(1)}
+                />
+                <ReferenceLine y={0} stroke="#374151" strokeDasharray="3 3" />
+                <Tooltip
+                  contentStyle={{ background: "#111827", border: "1px solid #1f2937", borderRadius: 8 }}
+                  labelStyle={{ color: "#9ca3af", fontSize: 12 }}
+                  formatter={(v: any) => [v.toFixed(3), "sentiment"]}
+                  labelFormatter={(l) => l.slice(0, 16)}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="avg_sentiment"
+                  stroke="#3b82f6"
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                />
               </LineChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-52 flex items-center justify-center text-gray-500 text-sm">
-              No sentiment data yet for ${selectedTicker}
+            <div className="h-56 flex flex-col items-center justify-center text-gray-500 text-sm">
+              <div className="text-3xl mb-2">📈</div>
+              No sentiment data for <span className="font-mono text-gray-400">${selectedTicker}</span> yet
             </div>
           )}
         </div>
 
         {/* Live Feed */}
         <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
-          <h2 className="text-lg font-semibold mb-3 text-gray-200">
-            Live Feed <span className="inline-block w-2 h-2 bg-green-400 rounded-full animate-pulse ml-1"></span>
+          <h2 className="text-lg font-semibold mb-3 text-gray-200 flex items-center gap-2">
+            Live Feed
+            <span className="inline-block w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+            {livePosts.length > 0 && (
+              <span className="text-xs text-gray-500 font-normal">{livePosts.length}</span>
+            )}
           </h2>
-          <div className="space-y-2 max-h-80 overflow-y-auto">
+          <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
             {livePosts.map((p, i) => (
-              <div key={i} className="bg-gray-800 rounded p-2 text-xs">
-                <div className="flex justify-between text-gray-500 mb-1">
-                  <span className="capitalize">{p.source}</span>
-                  <span>{p.author}</span>
+              <div key={i} className="bg-gray-800 rounded-lg p-2.5 text-xs border border-gray-700/50">
+                <div className="flex justify-between items-center mb-1 gap-1">
+                  <SourceBadge source={p.source} />
+                  <span className="text-gray-500 truncate max-w-[100px]">{p.author}</span>
                 </div>
-                <p className="text-gray-300 line-clamp-2">{p.content}</p>
+                <p className="text-gray-300 line-clamp-2 leading-relaxed">{p.content}</p>
               </div>
             ))}
-            {!livePosts.length && <p className="text-gray-500 text-sm text-center py-4">Waiting for live data...</p>}
+            {!livePosts.length && (
+              <div className="text-gray-500 text-sm text-center py-6">
+                <div className="text-2xl mb-2">📡</div>
+                Waiting for live data...
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Search Results */}
+        {/* Posts */}
         <div className="bg-gray-900 rounded-xl p-4 border border-gray-800 col-span-2">
           <h2 className="text-lg font-semibold mb-3 text-gray-200">
-            {search ? `Results for "${search}"` : "Recent Posts"}
+            {search ? (
+              <>Results for <span className="text-blue-400">"{search}"</span></>
+            ) : (
+              "Recent Posts"
+            )}
+            {posts?.length > 0 && (
+              <span className="text-xs text-gray-500 font-normal ml-2">{posts.length} shown</span>
+            )}
           </h2>
-          <div className="space-y-2 max-h-80 overflow-y-auto">
+          <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
             {(posts || []).map((p: any) => (
-              <div key={p.id} className="bg-gray-800 rounded-lg p-3">
-                <div className="flex justify-between items-center mb-1 text-xs text-gray-500">
-                  <span className="capitalize font-medium text-gray-400">{p.source}</span>
-                  <span>{p.author} · {p.posted_at ? new Date(p.posted_at).toLocaleString() : ""}</span>
+              <div key={p.id} className="bg-gray-800 rounded-lg p-3 border border-gray-700/50">
+                <div className="flex justify-between items-center mb-1.5 gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <SourceBadge source={p.source} />
+                    <span className="text-xs text-gray-400">{p.author}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <SentimentBadge score={p.sentiment_score} label={p.sentiment_label} />
+                    <span className="text-xs text-gray-600">{p.posted_at ? timeAgo(p.posted_at) : ""}</span>
+                  </div>
                 </div>
-                <p className="text-sm text-gray-200 line-clamp-3">{p.content}</p>
+                <p className="text-sm text-gray-200 line-clamp-3 leading-relaxed">{p.content}</p>
                 {p.url && (
-                  <a href={p.url} target="_blank" rel="noreferrer" className="text-xs text-blue-400 hover:underline mt-1 inline-block">
-                    View source
+                  <a
+                    href={p.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-blue-400 hover:underline mt-1 inline-block"
+                  >
+                    View source ↗
                   </a>
                 )}
               </div>
             ))}
-            {!posts?.length && <p className="text-gray-500 text-sm text-center py-4">No posts yet</p>}
+            {!posts?.length && (
+              <div className="text-gray-500 text-sm text-center py-6">
+                <div className="text-2xl mb-2">🔍</div>
+                {search ? `No posts matching "${search}"` : "No posts collected yet"}
+              </div>
+            )}
           </div>
         </div>
       </div>

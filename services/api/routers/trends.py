@@ -66,3 +66,32 @@ async def get_sentiment_timeline(
         }
         for row in rows
     ]
+
+
+@router.get("/stats")
+async def get_stats(db: AsyncSession = Depends(get_db)):
+    """Quick system overview: total posts, per-source counts, last collected."""
+    result = await db.execute(
+        text("""
+            SELECT
+                COUNT(*) as total,
+                COUNT(*) FILTER (WHERE source = 'stocktwits') as stocktwits,
+                COUNT(*) FILTER (WHERE source = 'reddit') as reddit,
+                COUNT(*) FILTER (WHERE source = 'nitter') as nitter,
+                MAX(collected_at) as last_collected
+            FROM posts
+        """)
+    )
+    row = result.fetchone()
+    ticker_result = await db.execute(text("SELECT COUNT(DISTINCT ticker) FROM ticker_mentions"))
+    ticker_row = ticker_result.fetchone()
+    return {
+        "total_posts": row.total,
+        "by_source": {
+            "stocktwits": row.stocktwits,
+            "reddit": row.reddit,
+            "nitter": row.nitter,
+        },
+        "tickers_tracked": ticker_row[0],
+        "last_collected": row.last_collected.isoformat() if row.last_collected else None,
+    }
